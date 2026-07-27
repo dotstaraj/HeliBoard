@@ -276,6 +276,12 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
 
     override fun resetMetaState() {
         metaState = 0
+        metaPressStates.forEach { key, value ->
+            if (value == MetaPressState.LOCKED || value == MetaPressState.SET || value == MetaPressState.RELEASED_BUT_ACTIVE) {
+                keyboardSwitcher.mainKeyboardView?.updateLockState(key, false)
+            }
+        }
+        metaPressStates.clear()
     }
 
     private fun onLanguageSlide(steps: Int): Boolean {
@@ -434,13 +440,22 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
     private fun metaOnPressKey(primaryCode: Int) {
         val metaCode = primaryCode.toMetaState() ?: return
         if (primaryCode.isMetaLock()) {
-            // if unset -> lock, otherwise set to UNSET_ON_RELEASE so it's unset on release
-            if (metaPressStates[primaryCode] != MetaPressState.LOCKED) {
+            val keyCodeSelection = primaryCode == KeyCode.SELECTION;
+            // if unset -> lock, otherwise set to UNSET_ON_RELEASE so it's unset on release.
+            // For SELECTION specifically, InputLogic is the source of truth for whether we're
+            // currently active, not metaPressStates
+            val isCurrentlyLocked = if (keyCodeSelection) inputLogic.inSelectionMode()
+                                    else metaPressStates[primaryCode] == MetaPressState.LOCKED
+            if (!isCurrentlyLocked) {
                 metaPressStates[primaryCode] = MetaPressState.LOCKED
                 keyboardSwitcher.mainKeyboardView?.updateLockState(primaryCode, true)
-                metaState = metaState or metaCode
+
+                // SELECTION is intentionally excluded from the shared metaState
+                if (keyCodeSelection) inputLogic.startSelectionMode()
+                else metaState = metaState or metaCode
             } else {
                 metaPressStates[primaryCode] = MetaPressState.UNSET_ON_RELEASE
+                if (keyCodeSelection) inputLogic.endSelectionMode()
             }
             return
         }
@@ -528,9 +543,13 @@ class KeyboardActionListenerImpl(private val latinIME: LatinIME, private val inp
             KeyCode.META, KeyCode.META_LOCK -> KeyEvent.META_META_ON
             KeyCode.META_LEFT               -> KeyEvent.META_META_LEFT_ON
             KeyCode.META_RIGHT              -> KeyEvent.META_META_RIGHT_ON
+            KeyCode.SELECTION               -> KeyEvent.META_SHIFT_ON
             else -> null
         }
 
-        private fun Int.isMetaLock() = this == KeyCode.CTRL_LOCK || this == KeyCode.ALT_LOCK || this == KeyCode.FN_LOCK || this == KeyCode.META_LOCK
+        // SELECTION only ever behaves as a lock/toggle: unlike Ctrl/Alt/Fn/Meta there is no separate
+        // non-lock variant
+        private fun Int.isMetaLock() = this == KeyCode.CTRL_LOCK || this == KeyCode.ALT_LOCK || this == KeyCode.FN_LOCK ||
+            this == KeyCode.META_LOCK || this == KeyCode.SELECTION
     }
 }

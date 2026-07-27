@@ -39,6 +39,7 @@ object KeyLabel {
     const val ALT = "alt"
     const val FN = "fn"
     const val META = "meta"
+    const val SELECT = "select"
     const val TAB = "tab"
     const val ESCAPE = "esc"
     const val TIMESTAMP = "timestamp"
@@ -115,7 +116,7 @@ object KeyLabel {
             CURRENCY3 -> params.mLocaleKeyboardInfos.currencyKey.second[2]
             CURRENCY4 -> params.mLocaleKeyboardInfos.currencyKey.second[3]
             CURRENCY5 -> params.mLocaleKeyboardInfos.currencyKey.second[4]
-            CTRL, ALT, FN, META, ESCAPE -> label.uppercase(Locale.US)
+            CTRL, ALT, FN, META, ESCAPE, SELECT -> label.uppercase(Locale.US)
             TAB -> "!icon/tab_key|!code/${KeyCode.TAB}"
             TIMESTAMP -> "⌚"
             EMOJI_SEARCH -> "!icon/search_key|!code/key_emoji_search"
@@ -132,6 +133,7 @@ object KeyLabel {
             FN           -> KeyCode.FN
             META         -> KeyCode.META
             ESCAPE       -> KeyCode.ESCAPE
+            SELECT       -> KeyCode.SELECTION
             TIMESTAMP    -> KeyCode.TIMESTAMP
             else         -> null
         }

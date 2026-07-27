@@ -72,6 +72,7 @@ import helium314.keyboard.latin.utils.TimestampKt;
 
 import java.util.ArrayList;
 import java.util.Locale;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
 
@@ -388,6 +389,17 @@ public final class InputLogic {
      */
     public boolean onUpdateSelection(int oldSelStart, int oldSelEnd, int newSelStart,
              int newSelEnd, int composingSpanStart, int composingSpanEnd, SettingsValues settingsValues) {
+        if (mSelectionMovementPhase != SelectionMovementPhase.IDLE) {
+            Log.d("_aj","UPD");
+            onSelectionMovementUpdate(newSelStart, newSelEnd);
+        } else if (inSelectionMode() && newSelStart == newSelEnd) {
+            // The editor reports the selection is now collapsed, and we're not in the middle of
+            // our own intentional collapse-and-reselect step (that's handled above, via
+            // mSelectionMovementPhase) - the selection was cleared some other way (tapping
+            // elsewhere, backspacing it away, etc.). Stop tracking so a later movement doesn't
+            // resume extending from a now-meaningless stale anchor.
+            endSelectionMode();
+        }
         boolean expectCursorMove = mightBeExpectedCursorMove(); // reset the timer
         if (mConnection.isBelatedExpectedUpdate(oldSelStart, newSelStart, oldSelEnd, newSelEnd, composingSpanStart, composingSpanEnd)) {
             // return whether we expect a user-initiated explicit cursor move (i.e. not as result of other input, but e.g. space swipe)
@@ -705,6 +717,142 @@ public final class InputLogic {
     }
 
     /**
+     * The anchor of the current Selection-mode selection - the endpoint that must stay fixed
+     * while cursor-movement keys extend/shrink the selection at the focal end.
+     * <p>
+     * The editor's own (start, end) selection report can't tell us which side this is: both
+     * {@link RichInputConnection#getExpectedSelectionStart} and the underlying editor APIs only
+     * ever report numeric (min, max), with no memory of which one is semantically the anchor and
+     * which the focus. That's fine as long as the focus stays on the positionally-larger side,
+     * but a jump like "move to start of text" can put the focus on what used to be the smaller side,
+     * at which point any code (ours, or the editor's own Shift+movement handling) that assumes "the
+     * untouched boundary is the anchor" silently starts preserving the wrong point. Tracking the
+     * anchor and focus ourselves avoids this problem.
+     */
+    private int mSelectionAnchor = Constants.NOT_A_CURSOR_POSITION;
+    private int mSelectionFocus;
+
+    /**
+     * Establishes the anchor: the current cursor position if nothing is selected yet (common case),
+     * or the smaller of the selection bounds otherwise (we don't attempt to detect which of the
+     * bound is the "real" anchor in that case - positionally smaller one is used as a
+     * simplifying assumption).
+     */
+    public void startSelectionMode() {
+        mSelectionAnchor = Math.min(mConnection.getExpectedSelectionStart(), mConnection.getExpectedSelectionEnd());
+    }
+
+    public void endSelectionMode() {
+        mSelectionAnchor = Constants.NOT_A_CURSOR_POSITION;
+        mSelectionMovementPhase = SelectionMovementPhase.IDLE;
+        mLatinIME.mHandler.removeCallbacks(onSelectionMovementTimeout);
+        final var mkv = KeyboardSwitcher.getInstance().getMainKeyboardView();
+        if (mkv != null) mkv.updateLockState(KeyCode.SELECTION, false);
+    }
+
+    public boolean inSelectionMode() {
+        return mSelectionAnchor != Constants.NOT_A_CURSOR_POSITION;
+    }
+
+    /** State for the in-flight operation started by startSelectionMovement, advanced by
+     *  onSelectionMovementUpdate (called from onUpdateSelection) or, failing that,
+     *  onSelectionovementTimeout. */
+    private enum SelectionMovementPhase {IDLE, COLLAPSE, MOVE, FINISH}
+    private SelectionMovementPhase mSelectionMovementPhase = SelectionMovementPhase.IDLE;
+
+    private static final int SELECTION_MOVEMENT_TIMEOUT_DELAY = 150;
+    private int mSelectionMovementKeyEventCode;
+    private int mSelectionMovementMetaState;
+
+    /**
+     * Selection-mode movement that doesn't trust the editor's own shift-extend handling.
+     * <p><
+     * Rather than asking the editor to extend its own selection, this collapses to the
+     * current focus and sends the movement as a plain, non-extending key event, so the editor
+     * computes the new position from an unambiguous collapsed cursor instead of from a selection
+     * whose anchor/focus points it might get wrong.
+     * <p>
+     * setSelection() and sendKeyEvent() travel through genuinely different, independently-timed
+     * channels with no ordering guarantee between them (see sendDownUpKeyEventWithMetaState's
+     * javadoc). Firing the collapse and the movement key back to back risks the collapse
+     * landing *after* the movement key and silently reverting it, indistinguishable from the
+     * movement doing nothing.Thus, each step is synchronized via onUpdateSelection; a timeout
+     * is only a safety net for editors that don't reliably report selection updates, not the
+     * primary sequencing mechanism.
+     */
+    private void startSelectionMovement(int keyEventCode, int metaStateWithShift) {
+        final int start = mConnection.getExpectedSelectionStart();
+        final int end = mConnection.getExpectedSelectionEnd();
+        final int focus = (start == mSelectionAnchor) ? end : start;
+        mSelectionFocus = focus;
+        mSelectionMovementKeyEventCode = keyEventCode;
+        mSelectionMovementMetaState = metaStateWithShift & ~KeyEvent.META_SHIFT_ON;
+        mSelectionMovementPhase = SelectionMovementPhase.COLLAPSE;
+
+        // if there's no selection, no need to collapse-then-move to determine
+        // new focus – just skip collapsing and go to move phase immediately
+        if (start == end) {
+            onSelectionMovementUpdate(start, end);
+        } else {
+            mConnection.setSelection(focus, focus);
+            mLatinIME.mHandler.removeCallbacks(onSelectionMovementTimeout);
+            mLatinIME.mHandler.postDelayed(onSelectionMovementTimeout, SELECTION_MOVEMENT_TIMEOUT_DELAY);
+        }
+    }
+
+    /**
+     * Called from onUpdateSelection whenever the editor reports a selection change while
+     * as selection movement is mid-flight (mSelectionMovementPhase != IDLE). Advances the
+     * state machine as soon as the step we're currently waiting on is confirmed to have actually
+     * landed, instead of assuming it did after a fixed delay.
+     */
+    private void onSelectionMovementUpdate(int newSelStart, int newSelEnd) {
+        switch(mSelectionMovementPhase) {
+            case COLLAPSE:
+                if (newSelStart != mSelectionFocus || newSelEnd != mSelectionFocus) return;
+                final boolean ctrlMask = (mSelectionMovementMetaState & KeyEvent.META_CTRL_ON) != 0;
+                if (ctrlMask && mSelectionMovementKeyEventCode == KeyEvent.KEYCODE_MOVE_HOME)
+                    finishSelectionMovement(0);
+                else if (ctrlMask && mSelectionMovementKeyEventCode == KeyEvent.KEYCODE_MOVE_END)
+                    finishSelectionMovement(mConnection.getTextLength());
+                else {
+                    mSelectionMovementPhase = SelectionMovementPhase.MOVE;
+                    mLatinIME.mHandler.removeCallbacks(onSelectionMovementTimeout);
+                    mLatinIME.mHandler.post( () -> sendDownUpKeyEventWithMetaState(mSelectionMovementKeyEventCode, mSelectionMovementMetaState));
+                    mLatinIME.mHandler.postDelayed(onSelectionMovementTimeout, SELECTION_MOVEMENT_TIMEOUT_DELAY);
+                }
+                break;
+            case MOVE:
+                if (newSelStart != newSelEnd || newSelStart == mSelectionFocus) return;
+                finishSelectionMovement(newSelStart);
+                break;
+            case FINISH:
+                if (newSelStart == newSelEnd) return;
+                mSelectionMovementPhase = SelectionMovementPhase.IDLE;
+                break;
+        }
+    }
+
+    /**
+     * Safety net for an editor that never confirms a step via onUpdateSelection at all (see
+     * startSelectionMovement's javadoc). Ignored via the token check if the step this
+     * was scheduled for has already been superseded by onSelectionMovementUpdate.
+     */
+    private final Runnable onSelectionMovementTimeout = new Runnable() {
+        @Override public void run() {
+            mConnection.reloadCursorPosition();
+            // Proceed anyway rather than getting stuck; the movement key will be interpreted
+            // relative to whatever is actually selected right now.
+            onSelectionMovementUpdate(mConnection.getExpectedSelectionStart(), mConnection.getExpectedSelectionEnd());
+        }
+    };
+
+    private void finishSelectionMovement(int newFocus) {
+        mSelectionMovementPhase = SelectionMovementPhase.FINISH;
+        mConnection.setSelection(mSelectionAnchor, mSelectionFocus = newFocus);
+    }
+
+    /**
      * Handle a functional key event.
      * <p>
      * A functional event is a special key, like delete, shift, emoji, or the settings key.
@@ -814,42 +962,62 @@ public final class InputLogic {
                 }
                 break;
             case KeyCode.WORD_LEFT:
-                sendDownUpKeyEventWithMetaState(
-                    ScriptUtils.isScriptRtl(currentKeyboardScript) ? KeyEvent.KEYCODE_DPAD_RIGHT : KeyEvent.KEYCODE_DPAD_LEFT,
-                    KeyEvent.META_CTRL_ON | event.getMetaState());
-                break;
             case KeyCode.WORD_RIGHT:
-                sendDownUpKeyEventWithMetaState(
-                    ScriptUtils.isScriptRtl(currentKeyboardScript) ? KeyEvent.KEYCODE_DPAD_LEFT : KeyEvent.KEYCODE_DPAD_RIGHT,
-                    KeyEvent.META_CTRL_ON | event.getMetaState());
-                break;
-            case KeyCode.MOVE_START_OF_PAGE:
-                final int selectionEnd1 = mConnection.getExpectedSelectionEnd();
-                final int selectionStart1 = mConnection.getExpectedSelectionStart();
-                sendDownUpKeyEventWithMetaState(KeyEvent.KEYCODE_MOVE_HOME, KeyEvent.META_CTRL_ON | event.getMetaState());
-                if (mConnection.getExpectedSelectionStart() == selectionStart1 && mConnection.getExpectedSelectionEnd() == selectionEnd1) {
-                    // unchanged -> try a different method (necessary for compose fields)
-                    final int newEnd = (event.getMetaState() & KeyEvent.META_SHIFT_MASK) != 0 ? selectionEnd1 : 0;
-                    mConnection.setSelection(0, newEnd);
+            case KeyCode.MOVE_START_OF_LINE:
+            case KeyCode.MOVE_END_OF_LINE: {
+                final int keyEventCode, metaState;
+                if (Set.of(KeyCode.WORD_RIGHT, KeyCode.WORD_LEFT).contains(keyCode)) {
+                    keyEventCode = ScriptUtils.isScriptRtl(currentKeyboardScript) ^ keyCode == KeyCode.WORD_LEFT ? KeyEvent.KEYCODE_DPAD_LEFT : KeyEvent.KEYCODE_DPAD_RIGHT;
+                    metaState = KeyEvent.META_CTRL_ON | event.getMetaState();
+                } else {
+                    keyEventCode = KeyCode.keyCodeToKeyEventCode(keyCode);
+                    metaState = event.getMetaState();
                 }
+                if (inSelectionMode()) startSelectionMovement(keyEventCode, metaState);
+                else sendDownUpKeyEventWithMetaState(keyEventCode, metaState);
                 break;
-            case KeyCode.MOVE_END_OF_PAGE:
-                final int selectionStart2 = mConnection.getExpectedSelectionStart();
-                final int selectionEnd2 = mConnection.getExpectedSelectionEnd();
-                sendDownUpKeyEventWithMetaState(KeyEvent.KEYCODE_MOVE_END, KeyEvent.META_CTRL_ON | event.getMetaState());
-                if (mConnection.getExpectedSelectionStart() == selectionStart2 && mConnection.getExpectedSelectionEnd() == selectionEnd2) {
-                    // unchanged, try fallback e.g. for compose fields that don't care about ctrl + end
-                    // we just move to a very large index, and hope the field is prepared to deal with this
-                    // getting the actual length of the text for setting the correct position can be tricky for some apps...
-                    try {
-                        final int newStart = (event.getMetaState() & KeyEvent.META_SHIFT_MASK) != 0 ? selectionStart2 : Integer.MAX_VALUE;
-                        mConnection.setSelection(newStart, Integer.MAX_VALUE);
-                    } catch (Exception e) {
-                        // better catch potential errors and just do nothing in this case
-                        Log.i(TAG, "error when trying to move cursor to last position: " + e);
+            }
+            case KeyCode.MOVE_START_OF_PAGE: {
+                final int keyEventCode = KeyEvent.KEYCODE_MOVE_HOME;
+                final int metaState = KeyEvent.META_CTRL_ON | event.getMetaState();
+
+                if (inSelectionMode()) startSelectionMovement(keyEventCode, metaState);
+                else {
+                    final int selectionEnd1 = mConnection.getExpectedSelectionEnd();
+                    final int selectionStart1 = mConnection.getExpectedSelectionStart();
+                    sendDownUpKeyEventWithMetaState(keyEventCode, metaState);
+                    if (mConnection.getExpectedSelectionStart() == selectionStart1 && mConnection.getExpectedSelectionEnd() == selectionEnd1) {
+                        // unchanged -> try a different method (necessary for compose fields)
+                        final int newEnd = (event.getMetaState() & KeyEvent.META_SHIFT_MASK) != 0 ? selectionEnd1 : 0;
+                        mConnection.setSelection(0, newEnd);
                     }
                 }
                 break;
+            }
+            case KeyCode.MOVE_END_OF_PAGE: {
+                final int keyEventCode = KeyEvent.KEYCODE_MOVE_END;
+                final int metaState = KeyEvent.META_CTRL_ON | event.getMetaState();
+
+                if (inSelectionMode()) startSelectionMovement(keyEventCode, metaState);
+                else {
+                    final int selectionStart2 = mConnection.getExpectedSelectionStart();
+                    final int selectionEnd2 = mConnection.getExpectedSelectionEnd();
+                    sendDownUpKeyEventWithMetaState(keyEventCode, metaState);
+                    if (mConnection.getExpectedSelectionStart() == selectionStart2 && mConnection.getExpectedSelectionEnd() == selectionEnd2) {
+                        // unchanged, try fallback e.g. for compose fields that don't care about ctrl + end
+                        // we just move to a very large index, and hope the field is prepared to deal with this
+                        // getting the actual length of the text for setting the correct position can be tricky for some apps...
+                        try {
+                            final int newStart = (event.getMetaState() & KeyEvent.META_SHIFT_MASK) != 0 ? selectionStart2 : Integer.MAX_VALUE;
+                            mConnection.setSelection(newStart, Integer.MAX_VALUE);
+                        } catch (Exception e) {
+                            // better catch potential errors and just do nothing in this case
+                            Log.i(TAG, "error when trying to move cursor to last position: " + e);
+                        }
+                    }
+                }
+                break;
+            }
             case KeyCode.UNDO:
                 if (GestureDataGatheringKt.useBackgroundGathering)
                     BackgroundGatheringCache.INSTANCE.onUndo(mWordComposer.isComposingWord() ? mWordComposer.getTypedWord() : mLastComposedWord.mCommittedWord);
@@ -897,7 +1065,10 @@ public final class InputLogic {
                         ? KeyCode.codePointToKeyEventCode(event.getCodePoint())
                         : KeyCode.keyCodeToKeyEventCode(keyCode);
                 if (keyEventCode != KeyEvent.KEYCODE_UNKNOWN) {
-                    sendDownUpKeyEventWithMetaState(keyEventCode, event.getMetaState());
+                    if (inSelectionMode() && Set.of(KeyCode.ARROW_UP, KeyCode.ARROW_DOWN, KeyCode.ARROW_LEFT, KeyCode.ARROW_RIGHT).contains(keyCode))
+                        startSelectionMovement(keyEventCode, event.getMetaState());
+                    else
+                        sendDownUpKeyEventWithMetaState(keyEventCode, event.getMetaState());
                     return;
                 }
                 if (event.getMetaState() != 0 && event.getCodePoint() >= 32) {

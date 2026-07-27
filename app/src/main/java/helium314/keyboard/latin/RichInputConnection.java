@@ -109,6 +109,10 @@ public final class RichInputConnection implements PrivateCommandPerformer {
      */
     private int mExpectedSelEnd = INVALID_CURSOR_POSITION; // in chars, not code points
     /**
+     * This number of characters in the text
+     */
+    private int mTextLength = INVALID_CURSOR_POSITION; // in chars, not code points
+    /**
      * This contains the committed text immediately preceding the cursor and the composing
      * text, if any. It is refreshed when the cursor moves by calling upon the TextView.
      */
@@ -282,7 +286,8 @@ public final class RichInputConnection implements PrivateCommandPerformer {
         return true;
     }
 
-    private void reloadCursorPosition() {
+    // package-visible for use by InputLogic.performTrackedSelectionMovement
+    public void reloadCursorPosition() {
         if (!isConnected()) return;
         final ExtractedText et = mIC.getExtractedText(new ExtractedTextRequest(), 0);
         if (et == null) return;
@@ -1148,6 +1153,10 @@ public final class RichInputConnection implements PrivateCommandPerformer {
 
     public int getExpectedSelectionEnd() {
         return mExpectedSelEnd;
+    }
+
+    public int getTextLength() {
+        return mIC.getExtractedText(new ExtractedTextRequest(), 0).text.length();
     }
 
     /**
