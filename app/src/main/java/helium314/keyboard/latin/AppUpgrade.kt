@@ -35,6 +35,7 @@ import helium314.keyboard.latin.utils.ScriptUtils.script
 import helium314.keyboard.latin.utils.SubtypeSettings
 import helium314.keyboard.latin.utils.SubtypeUtilsAdditional
 import helium314.keyboard.latin.utils.ToolbarKey
+import helium314.keyboard.latin.utils.ToolbarKeyCustomCodes
 import helium314.keyboard.latin.utils.defaultPinnedToolbarPref
 import helium314.keyboard.latin.utils.getResourceSubtypes
 import helium314.keyboard.latin.utils.locale
@@ -261,14 +262,14 @@ private object AppUpgrade {
             val customCodes = readCustomKeyCodes("toolbar_custom_key_codes")
             val customLongpressCodes = readCustomKeyCodes("toolbar_custom_longpress_codes")
             prefs.edit { remove("toolbar_custom_longpress_codes").remove("toolbar_custom_key_codes") }
-            val combined = EnumMap<ToolbarKey, Pair<Int?, Int?>>(ToolbarKey::class.java)
+            val combined = EnumMap<ToolbarKey, ToolbarKeyCustomCodes>(ToolbarKey::class.java)
             customCodes.forEach { runCatching {
                 val key = ToolbarKey.valueOf(it.key)
-                combined[key] = (combined[key] ?: (null to null)).copy(first = it.value)
+                combined[key] = (combined[key] ?: ToolbarKeyCustomCodes(null, null, null)).copy(click = it.value)
             } }
             customLongpressCodes.forEach { runCatching {
                 val key = ToolbarKey.valueOf(it.key)
-                combined[key] = (combined[key] ?: (null to null)).copy(second = it.value)
+                combined[key] = (combined[key] ?: ToolbarKeyCustomCodes(null, null, null)).copy(longClick = it.value)
             } }
             writeCustomKeyCodes(prefs, combined)
         }

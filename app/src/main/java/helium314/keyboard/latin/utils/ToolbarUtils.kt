@@ -217,18 +217,21 @@ private fun getEnabledToolbarKeys(prefs: SharedPreferences, pref: String, defaul
     }
 }
 
-fun writeCustomKeyCodes(prefs: SharedPreferences, codes: EnumMap<ToolbarKey, Pair<Int?, Int?>>) {
-    val string = codes.mapNotNull { entry -> entry.value?.let { "${entry.key.name},${it.first},${it.second}" } }.joinToString(";")
+fun writeCustomKeyCodes(prefs: SharedPreferences, codes: EnumMap<ToolbarKey, ToolbarKeyCustomCodes>) {
+    val string = codes.mapNotNull { entry -> entry.value?.let { "${entry.key.name},${it.click},${it.longClick},${it.swipeDown}" } }.joinToString(";")
     prefs.edit { putString(Settings.PREF_TOOLBAR_CUSTOM_KEY_CODES, string) }
 }
 
-fun readCustomKeyCodes(prefs: SharedPreferences): EnumMap<ToolbarKey, Pair<Int?, Int?>> {
-    val map = EnumMap<ToolbarKey, Pair<Int?, Int?>>(ToolbarKey::class.java)
+fun readCustomKeyCodes(prefs: SharedPreferences): EnumMap<ToolbarKey, ToolbarKeyCustomCodes> {
+    val map = EnumMap<ToolbarKey, ToolbarKeyCustomCodes>(ToolbarKey::class.java)
     prefs.getString(Settings.PREF_TOOLBAR_CUSTOM_KEY_CODES, Defaults.PREF_TOOLBAR_CUSTOM_KEY_CODES)!!
         .split(";").forEach {
             runCatching {
                 val s = it.split(",")
-                map[ToolbarKey.valueOf(s[0])] = s[1].toIntOrNull() to s[2].toIntOrNull()
+                val click = s[1].toIntOrNull()
+                val longClick = s[2].toIntOrNull()
+                val swipeDown = if (s.size > 3) s[3].toIntOrNull() else null
+                map[ToolbarKey.valueOf(s[0])] = ToolbarKeyCustomCodes(click, longClick, swipeDown)
             }
         }
     return map
@@ -237,18 +240,26 @@ fun readCustomKeyCodes(prefs: SharedPreferences): EnumMap<ToolbarKey, Pair<Int?,
 fun getCustomKeyCode(key: ToolbarKey, prefs: SharedPreferences): Int? {
     if (customToolbarKeyCodes == null)
         customToolbarKeyCodes = readCustomKeyCodes(prefs)
-    return customToolbarKeyCodes!![key]?.first
+    return customToolbarKeyCodes!![key]?.click
 }
 
 fun getCustomLongpressKeyCode(key: ToolbarKey, prefs: SharedPreferences): Int? {
     if (customToolbarKeyCodes == null)
         customToolbarKeyCodes = readCustomKeyCodes(prefs)
-    return customToolbarKeyCodes!![key]?.second
+    return customToolbarKeyCodes!![key]?.longClick
+}
+
+fun getCustomSwipeDownKeyCode(key: ToolbarKey, prefs: SharedPreferences): Int? {
+    if (customToolbarKeyCodes == null)
+        customToolbarKeyCodes = readCustomKeyCodes(prefs)
+    return customToolbarKeyCodes!![key]?.swipeDown
 }
 
 fun clearCustomToolbarKeyCodes() {
     customToolbarKeyCodes = null
 }
+
+fun getCodeForToolbarKeySwipeDown(key: ToolbarKey) = Settings.getInstance().getCustomToolbarSwipeDownCode(key) ?: KeyCode.UNSPECIFIED
 
 fun onClickToolbarKey(view: View, onCodeInput: (Int) -> Unit) {
     AudioAndHapticFeedbackManager.getInstance().performHapticAndAudioFeedback(KeyCode.NOT_SPECIFIED, view, HapticEvent.KEY_PRESS)
@@ -269,6 +280,14 @@ fun onLongClickToolbarKey(view: View, onCodeInput: (Int, Boolean) -> Unit) {
     }
 }
 
+fun onSwipeDownToolbarKey(view: View, onCodeInput: (Int) -> Unit) {
+    val code = getCodeForToolbarKeySwipeDown(view.tag as ToolbarKey)
+    if (code != KeyCode.UNSPECIFIED) {
+        AudioAndHapticFeedbackManager.getInstance().performHapticAndAudioFeedback(KeyCode.NOT_SPECIFIED, view, HapticEvent.KEY_PRESS)
+        onCodeInput(code)
+    }
+}
+
 private fun repeatToolbarKey(view: View, onClick: (view: View) -> Unit) {
     view.handler.postDelayed({
         if (view.isPressed) {
@@ -278,4 +297,10 @@ private fun repeatToolbarKey(view: View, onClick: (view: View) -> Unit) {
     }, view.resources.getInteger(R.integer.config_key_repeat_interval).toLong())
 }
 
-private var customToolbarKeyCodes: EnumMap<ToolbarKey, Pair<Int?, Int?>>? = null
+private var customToolbarKeyCodes: EnumMap<ToolbarKey, ToolbarKeyCustomCodes>? = null
+
+data class ToolbarKeyCustomCodes(
+    val click: Int?,
+    val longClick: Int?,
+    val swipeDown: Int?
+)

@@ -559,6 +559,10 @@ public final class Settings implements SharedPreferences.OnSharedPreferenceChang
         return ToolbarUtilsKt.getCustomLongpressKeyCode(key, mPrefs);
     }
 
+    public Integer getCustomToolbarSwipeDownCode(ToolbarKey key) {
+        return ToolbarUtilsKt.getCustomSwipeDownKeyCode(key, mPrefs);
+    }
+
     public static File getCustomFontFile(final Context context) {
         return new File(DeviceProtectedUtils.getFilesDir(context), "custom_font");
     }

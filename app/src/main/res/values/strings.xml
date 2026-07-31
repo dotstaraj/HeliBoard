@@ -948,6 +948,8 @@ New dictionary:
     <string name="key_code">Key code</string>
     <!-- Text for showing / setting long press code -->
     <string name="long_press_code">Long press code</string>
+    <!-- Text for showing / setting swipe down code -->
+    <string name="swipe_down_code">Swipe down code</string>
     <!-- Title of the setting for showing the toolbar automatically -->
     <string name="auto_show_toolbar">Auto show toolbar</string>
     <!-- Description of the setting for showing the toolbar automatically -->

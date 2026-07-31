@@ -26,7 +26,9 @@ import androidx.compose.ui.unit.dp
 import helium314.keyboard.keyboard.internal.KeyboardIconsSet
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyCode.checkAndConvertCode
 import helium314.keyboard.latin.R
+import helium314.keyboard.latin.settings.Settings
 import helium314.keyboard.latin.utils.ToolbarKey
+import helium314.keyboard.latin.utils.ToolbarKeyCustomCodes
 import helium314.keyboard.latin.utils.getCodeForToolbarKey
 import helium314.keyboard.latin.utils.getCodeForToolbarKeyLongClick
 import helium314.keyboard.latin.utils.getStringResourceOrName
@@ -98,14 +100,15 @@ private fun ToolbarKeyCustomizer(
     val prefs = ctx.prefs()
     var code by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(getCodeForToolbarKey(key).toString())) }
     var longPressCode by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(getCodeForToolbarKeyLongClick(key).toString())) }
+    var swipeDownCode by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue((Settings.getInstance().getCustomToolbarSwipeDownCode(key) ?: "").toString())) }
     ThreeButtonAlertDialog(
         onDismissRequest = onDismissRequest,
         onConfirmed = {
             val codes = readCustomKeyCodes(prefs)
-            codes[key] = checkCode(code) to checkCode(longPressCode, true)
+            codes[key] = ToolbarKeyCustomCodes(checkCode(code), checkCode(longPressCode, true), checkCode(swipeDownCode))
             writeCustomKeyCodes(prefs, codes)
         },
-        checkOk = { checkCode(code) != null && checkCode(longPressCode, true) != null },
+        checkOk = { checkCode(code) != null && checkCode(longPressCode, true) != null && (swipeDownCode.text.isEmpty() || checkCode(swipeDownCode) != null) },
         neutralButtonText = if (readCustomKeyCodes(prefs).containsKey(key))
                 stringResource(R.string.button_default)
             else null,
@@ -132,6 +135,15 @@ private fun ToolbarKeyCustomizer(
                     TextField(
                         value = longPressCode,
                         onValueChange = { longPressCode = it },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(0.5f)
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.swipe_down_code), Modifier.weight(0.5f))
+                    TextField(
+                        value = swipeDownCode,
+                        onValueChange = { swipeDownCode = it },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(0.5f)
                     )

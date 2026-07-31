@@ -62,6 +62,8 @@ import kotlin.math.min
 import androidx.core.view.isGone
 import helium314.keyboard.latin.utils.onClickToolbarKey
 import helium314.keyboard.latin.utils.onLongClickToolbarKey
+import helium314.keyboard.latin.utils.getCodeForToolbarKeySwipeDown
+import helium314.keyboard.latin.utils.onSwipeDownToolbarKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
@@ -193,11 +195,23 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
                 val dy = me.y - down.y
                 val dx = me.x - down.x
 
-                if (Settings.getValues().mToolbarSwipeDownToHide && dy > 50.dpToPx(resources) && abs(dy) > abs(dx)) {
-                    if (dy + deltaY <= 50.dpToPx(resources)) {
-                        setToolbarVisibility(!toolbarContainer.isVisible)
+                if (dy > 50.dpToPx(resources) && abs(dy) > abs(dx)) {
+                    val toolbarKey = findToolbarKeyAt(down.rawX, down.rawY)
+                    if (toolbarKey != null && toolbarKey.tag is ToolbarKey) {
+                        val code = getCodeForToolbarKeySwipeDown(toolbarKey.tag as ToolbarKey)
+                        if (code != KeyCode.UNSPECIFIED) {
+                            if (dy + deltaY <= 50.dpToPx(resources)) {
+                                onSwipeDownToolbarKey(toolbarKey) { listener.onCodeInput(it, Constants.SUGGESTION_STRIP_COORDINATE, Constants.SUGGESTION_STRIP_COORDINATE, false) }
+                            }
+                            return true
+                        }
                     }
-                    return true
+                    if (Settings.getValues().mToolbarSwipeDownToHide) {
+                        if (dy + deltaY <= 50.dpToPx(resources)) {
+                            setToolbarVisibility(!toolbarContainer.isVisible)
+                        }
+                        return true
+                    }
                 }
 
                 return if (!isExternalSuggestionVisible && toolbarContainer.visibility != VISIBLE && deltaY > 0 && dy < (-10).dpToPx(resources)) showMoreSuggestions()
@@ -552,6 +566,26 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         (view.layoutParams as LinearLayout.LayoutParams).weight = 1f
         colors.setColor(view, ColorType.TOOL_BAR_KEY)
         colors.setBackground(view, ColorType.STRIP_BACKGROUND)
+    }
+
+    private fun findToolbarKeyAt(x: Float, y: Float): View? {
+        val location = IntArray(2)
+        val tempRect = android.graphics.Rect()
+
+        fun findIn(container: ViewGroup): View? {
+            if (!container.isShown) return null
+            container.getLocationOnScreen(location)
+            val relX = x - location[0]
+            val relY = y - location[1]
+            for (i in 0 until container.childCount) {
+                val child = container.getChildAt(i)
+                if (!child.isShown) continue
+                child.getHitRect(tempRect)
+                if (tempRect.contains(relX.toInt(), relY.toInt())) return child
+            }
+            return null
+        }
+        return findIn(toolbar) ?: findIn(pinnedKeys)
     }
 
     companion object {
