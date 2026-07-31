@@ -25,11 +25,12 @@
             android:layout_weight="0"
             android:layout_marginStart="1dp"
             android:background="@drawable/toolbar_expand_key_background"
+            android:visibility="gone"
             style="?attr/suggestionWordStyle"
             android:contentDescription="@string/more_keys_strip_description" />
         <HorizontalScrollView
             android:id="@+id/toolbar_container"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="match_parent"
             android:scrollbarThumbHorizontal="@color/toolbar_scrollbar"
             android:visibility="gone">

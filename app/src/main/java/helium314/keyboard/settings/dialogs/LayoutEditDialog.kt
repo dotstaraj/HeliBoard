@@ -104,6 +104,7 @@ fun LayoutEditDialog(
         },
         checkTextValid = { text ->
             val valid = LayoutUtilsCustom.checkLayout(text, ctx)
+            /*
             errorJob?.cancel()
             if (!valid) {
                 errorJob = scope.launch {
@@ -116,6 +117,7 @@ fun LayoutEditDialog(
                     }
                 }
             }
+             */
             valid && nameValid // don't allow saving with invalid name, but inform user about issues with layout content
         },
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false, dismissOnBackPress = false),

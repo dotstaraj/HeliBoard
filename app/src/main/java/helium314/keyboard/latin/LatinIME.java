@@ -1139,7 +1139,8 @@ public class LatinIME extends InputMethodService implements
 
     @Override
     public void onSwipeDownOnToolbar() {
-        requestHideSelf(0);
+        //requestHideSelf(0);
+        mSuggestionStripView.setToolbarVisibility(!mSuggestionStripView.getToolbarVisibility());
     }
 
     @Override

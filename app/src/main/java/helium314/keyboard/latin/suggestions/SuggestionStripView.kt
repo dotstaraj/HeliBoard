@@ -118,7 +118,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     private val toolbarContainer: View = findViewById(R.id.toolbar_container)
     private val pinnedKeys: ViewGroup = findViewById(R.id.pinned_keys)
     private val suggestionsStrip: ViewGroup = findViewById(R.id.suggestions_strip)
-    private val toolbarExpandKey = findViewById<ImageButton>(R.id.suggestions_strip_toolbar_key)
+    private val toolbarExpandKey = ImageButton(context) // findViewById<ImageButton>(R.id.suggestions_strip_toolbar_key)
     private val incognitoIcon = KeyboardIconsSet.instance.getNewDrawable(ToolbarKey.INCOGNITO.name, context)
     private val toolbarArrowIcon = KeyboardIconsSet.instance.getNewDrawable(KeyboardIconsSet.NAME_TOOLBAR_KEY, context)
     private val defaultToolbarBackground: Drawable = toolbarExpandKey.background
@@ -133,6 +133,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     init {
         val colors = Settings.getValues().mColors
 
+        /*
         // expand key
         // weird way of setting size (default is config_suggestions_strip_edge_key_width)
         // but better not change it or people will complain
@@ -142,6 +143,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         colors.setBackground(toolbarExpandKey, ColorType.STRIP_BACKGROUND) // necessary because background is re-used for defaultToolbarBackground
         colors.setColor(toolbarExpandKey, ColorType.TOOL_BAR_EXPAND_KEY)
         colors.setColor(toolbarExpandKey.background, ColorType.TOOL_BAR_EXPAND_KEY_BACKGROUND)
+         */
 
         // background indicator for pinned keys
         val color = colors.get(ColorType.TOOL_BAR_KEY_ENABLED_BACKGROUND) or -0x1000000 // ignore alpha (in Java this is more readable 0xFF000000)
@@ -192,7 +194,9 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
                 val dx = me.x - down.x
 
                 if (Settings.getValues().mToolbarSwipeDownToHide && dy > 50.dpToPx(resources) && abs(dy) > abs(dx)) {
-                    listener.onSwipeDownOnToolbar()
+                    if (dy + deltaY <= 50.dpToPx(resources)) {
+                        setToolbarVisibility(!toolbarContainer.isVisible)
+                    }
                     return true
                 }
 
@@ -240,6 +244,8 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
 
         toolbarExpandKey.scaleX = (if (toolbarVisible) -1f else 1f) * direction
     }
+
+    fun getToolbarVisibility() = toolbarContainer.isVisible
 
     fun setSuggestions(suggestions: SuggestedWords, isRtlLanguage: Boolean) {
         clear()

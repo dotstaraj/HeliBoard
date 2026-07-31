@@ -167,6 +167,9 @@ class MoreSuggestionsView @JvmOverloads constructor(
 
     fun touchEvent(motionEvent: MotionEvent) {
         if (!isShowingInParent) {
+            lastX = motionEvent.x.toInt()
+            lastY = motionEvent.y.toInt()
+            gestureDetector.onTouchEvent(motionEvent)
             return // Ignore any touch event while more suggestions panel hasn't been shown.
         }
         // In the sliding input mode. MotionEvent should be forwarded to MoreSuggestionsView.
