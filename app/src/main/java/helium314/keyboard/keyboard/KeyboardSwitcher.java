@@ -538,11 +538,19 @@ public final class KeyboardSwitcher implements KeyboardState.SwitchActions {
     }
 
     public void reloadMainKeyboard() {
-        // Reload the entire keyboard, and switch to the previous layout
         final boolean wasEmoji = isShowingEmojiPalettes();
         final boolean wasClipboard = isShowingClipboardHistory();
+
+        // If input view was actually hidden since last load (true context switch),
+        // only then reset to alphabet; otherwise preserve whatever layout was active
+        final boolean tornDown = mLatinIME.consumeInputViewWasTornDown();
+        if (!tornDown) saveKeyboardState();
+
         loadKeyboard(mLatinIME.getCurrentInputEditorInfo(), Settings.getValues(),
                 mLatinIME.getCurrentAutoCapsState(), mLatinIME.getCurrentRecapitalizeState(), null);
+
+        if (tornDown) return;
+
         if (wasEmoji) {
             setEmojiKeyboard();
         } else if (wasClipboard) {

@@ -149,6 +149,13 @@ public class LatinIME extends InputMethodService implements
     // {@link #onEvaluateInputViewShown()}.
     private boolean mIsExecutingStartShowingInputView;
 
+    boolean mInputViewWasTornDown;
+    public boolean consumeInputViewWasTornDown() {
+        final boolean wasTornDown = mInputViewWasTornDown;
+        mInputViewWasTornDown = false;
+        return wasTornDown;
+    }
+
     // Used for re-initialize keyboard layout after onConfigurationChange.
     @Nullable
     private Context mDisplayContext;
@@ -971,9 +978,6 @@ public class LatinIME extends InputMethodService implements
                 switcher.saveKeyboardState();
             }
         } else if (restarting) {
-            // TODO: Come up with a more comprehensive way to reset the keyboard layout when
-            // a keyboard layout set doesn't get reloaded in this method.
-            switcher.resetKeyboardStateToAlphabet(getCurrentAutoCapsState(), getCurrentRecapitalizeState());
             // In apps like Talk, we come here when the text is sent and the field gets emptied and
             // we need to re-evaluate the shift state, but not the whole layout which would be
             // disruptive.
@@ -1036,6 +1040,7 @@ public class LatinIME extends InputMethodService implements
     void onFinishInputViewInternal(final boolean finishingInput) {
         super.onFinishInputView(finishingInput);
         Log.i(TAG, "onFinishInputView");
+        mInputViewWasTornDown = true;
         cleanupInternalStateForFinishInput();
     }
 
