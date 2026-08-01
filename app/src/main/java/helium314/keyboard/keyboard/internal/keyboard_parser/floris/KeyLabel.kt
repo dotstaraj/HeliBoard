@@ -121,7 +121,7 @@ object KeyLabel {
             TIMESTAMP -> "⌚"
             EMOJI_SEARCH -> "!icon/search_key|!code/key_emoji_search"
             else -> if (label in toolbarKeyStrings.values)
-                "!icon/$label|!code/${getCodeForToolbarKey(ToolbarKey.valueOf(label.uppercase(Locale.US)))}"
+                "!icon/$label|!code/${getCodeForToolbarKey(label.uppercase(Locale.US))}"
             else label
         }
         val code = when (label) { // maybe a bit lazy to not assemble the entire string above

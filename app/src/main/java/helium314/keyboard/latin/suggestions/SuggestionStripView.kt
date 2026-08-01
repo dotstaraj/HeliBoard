@@ -80,6 +80,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     interface Listener {
         fun pickSuggestionManually(word: SuggestedWordInfo?)
         fun onCodeInput(primaryCode: Int, x: Int, y: Int, isKeyRepeat: Boolean)
+        fun onTextInput(text: String?)
         fun removeSuggestion(word: String?)
         fun removeExternalSuggestions()
         fun onSwipeDownOnToolbar()
@@ -197,8 +198,8 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
 
                 if (dy > 50.dpToPx(resources) && abs(dy) > abs(dx)) {
                     val toolbarKey = findToolbarKeyAt(down.rawX, down.rawY)
-                    if (toolbarKey != null && toolbarKey.tag is ToolbarKey) {
-                        val code = getCodeForToolbarKeySwipeDown(toolbarKey.tag as ToolbarKey)
+                    if (toolbarKey != null && toolbarKey.tag is String) {
+                        val code = getCodeForToolbarKeySwipeDown(toolbarKey.tag as String)
                         if (code != KeyCode.UNSPECIFIED) {
                             if (dy + deltaY <= 50.dpToPx(resources)) {
                                 onSwipeDownToolbarKey(toolbarKey) { listener.onCodeInput(it, Constants.SUGGESTION_STRIP_COORDINATE, Constants.SUGGESTION_STRIP_COORDINATE, false) }
@@ -284,7 +285,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
             wrapper.addView(view)
             suggestionsStrip.addView(wrapper)
 
-            val closeButton = createToolbarKey(context, ToolbarKey.CLOSE_HISTORY)
+            val closeButton = createToolbarKey(context, ToolbarKey.CLOSE_HISTORY.name)
             closeButton.layoutParams = toolbarKeyLayoutParams
             setupKey(closeButton, Settings.getValues().mColors)
             closeButton.setOnClickListener {
@@ -350,8 +351,8 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
 
     override fun onClick(view: View) {
         val tag = view.tag
-        if (tag is ToolbarKey) {
-            onClickToolbarKey(view) { listener.onCodeInput(it, Constants.SUGGESTION_STRIP_COORDINATE, Constants.SUGGESTION_STRIP_COORDINATE, false) }
+        if (tag is String) {
+            onClickToolbarKey(view, { listener.onCodeInput(it, Constants.SUGGESTION_STRIP_COORDINATE, Constants.SUGGESTION_STRIP_COORDINATE, false) }, { listener.onTextInput(it) })
             return
         }
         AudioAndHapticFeedbackManager.getInstance().performHapticAndAudioFeedback(KeyCode.NOT_SPECIFIED, this, HapticEvent.KEY_PRESS)
@@ -370,8 +371,8 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     }
 
     override fun onLongClick(view: View): Boolean {
-        if (view.tag is ToolbarKey) {
-            onLongClickToolbarKey(view)
+        if (view.tag is String) {
+            handleLongClickToolbarKey(view)
             return true
         }
         AudioAndHapticFeedbackManager.getInstance().performHapticFeedback(this, HapticEvent.KEY_LONG_PRESS)
@@ -384,10 +385,10 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
 
     // actually private stuff
 
-    private fun onLongClickToolbarKey(view: View) {
-        val tag = view.tag as? ToolbarKey ?: return
+    private fun handleLongClickToolbarKey(view: View) {
+        val tag = view.tag as? String ?: return
         if (!Settings.getValues().mQuickPinToolbarKeys || view.parent === pinnedKeys) {
-            onLongClickToolbarKey(view) { code, isRepeat -> listener.onCodeInput(code, Constants.SUGGESTION_STRIP_COORDINATE, Constants.SUGGESTION_STRIP_COORDINATE, isRepeat) }
+            onLongClickToolbarKey(view, { code, isRepeat -> listener.onCodeInput(code, Constants.SUGGESTION_STRIP_COORDINATE, Constants.SUGGESTION_STRIP_COORDINATE, isRepeat) }, { listener.onTextInput(it) })
         } else if (view.parent === toolbar) {
             AudioAndHapticFeedbackManager.getInstance().performHapticFeedback(this, HapticEvent.KEY_LONG_PRESS)
             val pinnedKeyView = pinnedKeys.findViewWithTag<View>(tag)
@@ -522,8 +523,8 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
 
     fun updateVoiceKey() {
         val show = Settings.getValues().mShowsVoiceInputKey
-        toolbar.findViewWithTag<View>(ToolbarKey.VOICE)?.isVisible = show
-        pinnedKeys.findViewWithTag<View>(ToolbarKey.VOICE)?.isVisible = show
+        toolbar.findViewWithTag<View>(ToolbarKey.VOICE.name)?.isVisible = show
+        pinnedKeys.findViewWithTag<View>(ToolbarKey.VOICE.name)?.isVisible = show
     }
 
     private fun updateKeys() {
@@ -544,7 +545,7 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
         isExternalSuggestionVisible = false
     }
 
-    private fun addKeyToPinnedKeys(pinnedKey: ToolbarKey) {
+    private fun addKeyToPinnedKeys(pinnedKey: String) {
         val original = toolbar.findViewWithTag<ImageButton>(pinnedKey) ?: return
         // copy the original key to a new ImageButton
         val copy = ImageButton(context, null, R.attr.suggestionWordStyle)

@@ -3,6 +3,12 @@ package helium314.keyboard.latin.utils
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Typeface
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
@@ -15,6 +21,7 @@ import helium314.keyboard.keyboard.internal.KeyboardIconsSet
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyCode
 import helium314.keyboard.latin.AudioAndHapticFeedbackManager
 import helium314.keyboard.latin.R
+import helium314.keyboard.latin.common.ColorType
 import helium314.keyboard.latin.common.Constants.Separators
 import helium314.keyboard.latin.settings.Defaults
 import helium314.keyboard.latin.settings.Settings
@@ -25,14 +32,41 @@ import kotlinx.coroutines.launch
 import java.util.EnumMap
 import java.util.Locale
 
-fun createToolbarKey(context: Context, key: ToolbarKey): ImageButton {
+fun createToolbarKey(context: Context, keyName: String): ImageButton {
+    val key = try { ToolbarKey.valueOf(keyName) } catch (_: Exception) { null }
     val button = ImageButton(context, null, R.attr.suggestionWordStyle)
     button.scaleType = ImageView.ScaleType.CENTER
-    button.tag = key
-    button.contentDescription = key.name.lowercase().getStringResourceOrName("", context)
+    button.tag = keyName
+    if (key != null) {
+        button.contentDescription = key.name.lowercase().getStringResourceOrName("", context)
+        button.setImageDrawable(KeyboardIconsSet.instance.getNewDrawable(key.name, context))
+    } else if (keyName.startsWith("__str_")) {
+        val text = keyName.substringAfter("__str_").decodeFromHex()
+        button.contentDescription = text
+        button.setImageDrawable(createToolbarStringDrawable(context, text))
+    }
     setToolbarButtonActivatedState(button)
-    button.setImageDrawable(KeyboardIconsSet.instance.getNewDrawable(key.name, context))
     return button
+}
+
+private fun createToolbarStringDrawable(context: Context, text: String): Drawable {
+    val size = context.resources.getDimensionPixelSize(R.dimen.config_suggestions_strip_height) * 0.6f
+    val bitmap = Bitmap.createBitmap(size.toInt(), size.toInt(), Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Settings.getValues().mColors.get(ColorType.KEY_TEXT)
+        textAlign = Paint.Align.CENTER
+        textSize = size * 0.7f
+        typeface = Typeface.DEFAULT_BOLD
+    }
+    val textWidth = paint.measureText(text)
+    if (textWidth > size * 0.9f) {
+        paint.textSize *= (size * 0.9f) / textWidth
+    }
+    val x = canvas.width / 2f
+    val y = canvas.height / 2f - (paint.descent() + paint.ascent()) / 2
+    canvas.drawText(text, x, y, paint)
+    return BitmapDrawable(context.resources, bitmap)
 }
 
 fun setToolbarButtonsActivatedStateOnPrefChange(buttonsGroup: ViewGroup, key: String?) {
@@ -51,7 +85,9 @@ fun setToolbarButtonsActivatedStateOnPrefChange(buttonsGroup: ViewGroup, key: St
 }
 
 private fun setToolbarButtonActivatedState(button: ImageButton) {
-    button.isActivated = when (button.tag) {
+    val tag = button.tag as? String ?: return
+    val key = try { ToolbarKey.valueOf(tag) } catch (_: Exception) { null }
+    button.isActivated = when (key) {
         INCOGNITO -> button.context.prefs().getBoolean(Settings.PREF_ALWAYS_INCOGNITO_MODE, Defaults.PREF_ALWAYS_INCOGNITO_MODE)
         ONE_HANDED -> Settings.getValues().mOneHandedModeEnabled
         SPLIT -> Settings.getValues().mIsSplitKeyboardEnabled
@@ -61,60 +97,73 @@ private fun setToolbarButtonActivatedState(button: ImageButton) {
     }
 }
 
-fun getCodeForToolbarKey(key: ToolbarKey) = Settings.getInstance().getCustomToolbarKeyCode(key) ?: when (key) {
-    VOICE -> KeyCode.VOICE_INPUT
-    CLIPBOARD -> KeyCode.CLIPBOARD
-    NUMPAD -> KeyCode.NUMPAD
-    DPAD -> KeyCode.DPAD
-    UNDO -> KeyCode.UNDO
-    REDO -> KeyCode.REDO
-    SETTINGS -> KeyCode.SETTINGS
-    SELECT_ALL -> KeyCode.CLIPBOARD_SELECT_ALL
-    SELECT_WORD -> KeyCode.CLIPBOARD_SELECT_WORD
-    COPY -> KeyCode.CLIPBOARD_COPY
-    CUT -> KeyCode.CLIPBOARD_CUT
-    PASTE -> KeyCode.CLIPBOARD_PASTE
-    ONE_HANDED -> KeyCode.TOGGLE_ONE_HANDED_MODE
-    INCOGNITO -> KeyCode.TOGGLE_INCOGNITO_MODE
-    AUTOCORRECT -> KeyCode.TOGGLE_AUTOCORRECT
-    CLEAR_CLIPBOARD -> KeyCode.CLIPBOARD_CLEAR_HISTORY
-    CLOSE_HISTORY -> KeyCode.CLIPBOARD
-    EMOJI -> KeyCode.EMOJI
-    LEFT -> KeyCode.ARROW_LEFT
-    RIGHT -> KeyCode.ARROW_RIGHT
-    UP -> KeyCode.ARROW_UP
-    DOWN -> KeyCode.ARROW_DOWN
-    WORD_LEFT -> KeyCode.WORD_LEFT
-    WORD_RIGHT -> KeyCode.WORD_RIGHT
-    PAGE_UP -> KeyCode.PAGE_UP
-    PAGE_DOWN -> KeyCode.PAGE_DOWN
-    FULL_LEFT -> KeyCode.MOVE_START_OF_LINE
-    FULL_RIGHT -> KeyCode.MOVE_END_OF_LINE
-    PAGE_START -> KeyCode.MOVE_START_OF_PAGE
-    PAGE_END -> KeyCode.MOVE_END_OF_PAGE
-    SPLIT -> KeyCode.SPLIT_LAYOUT
-    FLOATING -> KeyCode.TOGGLE_FLOATING_WINDOW
-    BACKGROUND_GATHERING -> KeyCode.BACKGROUND_GATHERING
+fun getCodeForToolbarKey(keyName: String): Int {
+    val key = try { ToolbarKey.valueOf(keyName) } catch (_: Exception) { null }
+    if (key == null)
+        return if (keyName.startsWith("__str_")) {
+            val text = keyName.substringAfter("__str_").decodeFromHex()
+            if (text.codePointCount(0, text.length) == 1) text.codePointAt(0)
+            else KeyCode.MULTIPLE_CODE_POINTS
+        } else KeyCode.UNSPECIFIED
+    return Settings.getInstance().getCustomToolbarKeyCode(key) ?: when (key) {
+        VOICE -> KeyCode.VOICE_INPUT
+        CLIPBOARD -> KeyCode.CLIPBOARD
+        NUMPAD -> KeyCode.NUMPAD
+        DPAD -> KeyCode.DPAD
+        UNDO -> KeyCode.UNDO
+        REDO -> KeyCode.REDO
+        SETTINGS -> KeyCode.SETTINGS
+        SELECT_ALL -> KeyCode.CLIPBOARD_SELECT_ALL
+        SELECT_WORD -> KeyCode.CLIPBOARD_SELECT_WORD
+        COPY -> KeyCode.CLIPBOARD_COPY
+        CUT -> KeyCode.CLIPBOARD_CUT
+        PASTE -> KeyCode.CLIPBOARD_PASTE
+        ONE_HANDED -> KeyCode.TOGGLE_ONE_HANDED_MODE
+        INCOGNITO -> KeyCode.TOGGLE_INCOGNITO_MODE
+        AUTOCORRECT -> KeyCode.TOGGLE_AUTOCORRECT
+        CLEAR_CLIPBOARD -> KeyCode.CLIPBOARD_CLEAR_HISTORY
+        CLOSE_HISTORY -> KeyCode.CLIPBOARD
+        EMOJI -> KeyCode.EMOJI
+        LEFT -> KeyCode.ARROW_LEFT
+        RIGHT -> KeyCode.ARROW_RIGHT
+        UP -> KeyCode.ARROW_UP
+        DOWN -> KeyCode.ARROW_DOWN
+        WORD_LEFT -> KeyCode.WORD_LEFT
+        WORD_RIGHT -> KeyCode.WORD_RIGHT
+        PAGE_UP -> KeyCode.PAGE_UP
+        PAGE_DOWN -> KeyCode.PAGE_DOWN
+        FULL_LEFT -> KeyCode.MOVE_START_OF_LINE
+        FULL_RIGHT -> KeyCode.MOVE_END_OF_LINE
+        PAGE_START -> KeyCode.MOVE_START_OF_PAGE
+        PAGE_END -> KeyCode.MOVE_END_OF_PAGE
+        SPLIT -> KeyCode.SPLIT_LAYOUT
+        FLOATING -> KeyCode.TOGGLE_FLOATING_WINDOW
+        BACKGROUND_GATHERING -> KeyCode.BACKGROUND_GATHERING
+    }
 }
 
-fun getCodeForToolbarKeyLongClick(key: ToolbarKey) = Settings.getInstance().getCustomToolbarLongpressCode(key) ?: when (key) {
-    CLIPBOARD -> KeyCode.CLIPBOARD_PASTE
-    UNDO -> KeyCode.REDO
-    REDO -> KeyCode.UNDO
-    SELECT_ALL -> KeyCode.CLIPBOARD_SELECT_WORD
-    SELECT_WORD -> KeyCode.CLIPBOARD_SELECT_ALL
-    COPY -> KeyCode.CLIPBOARD_CUT
-    PASTE -> KeyCode.CLIPBOARD
-    LEFT -> KeyCode.KEY_REPEAT
-    RIGHT -> KeyCode.KEY_REPEAT
-    UP -> KeyCode.KEY_REPEAT
-    DOWN -> KeyCode.KEY_REPEAT
-    WORD_LEFT -> KeyCode.KEY_REPEAT
-    WORD_RIGHT -> KeyCode.KEY_REPEAT
-    PAGE_UP -> KeyCode.MOVE_START_OF_PAGE
-    PAGE_DOWN -> KeyCode.MOVE_END_OF_PAGE
-    BACKGROUND_GATHERING -> KeyCode.BACKGROUND_GATHERING_TEMP_OFF
-    else -> KeyCode.UNSPECIFIED
+fun getCodeForToolbarKeyLongClick(keyName: String): Int {
+    val key = try { ToolbarKey.valueOf(keyName) } catch (_: Exception) { null }
+    if (key == null) return KeyCode.UNSPECIFIED
+    return Settings.getInstance().getCustomToolbarLongpressCode(key) ?: when (key) {
+        CLIPBOARD -> KeyCode.CLIPBOARD_PASTE
+        UNDO -> KeyCode.REDO
+        REDO -> KeyCode.UNDO
+        SELECT_ALL -> KeyCode.CLIPBOARD_SELECT_WORD
+        SELECT_WORD -> KeyCode.CLIPBOARD_SELECT_ALL
+        COPY -> KeyCode.CLIPBOARD_CUT
+        PASTE -> KeyCode.CLIPBOARD
+        LEFT -> KeyCode.KEY_REPEAT
+        RIGHT -> KeyCode.KEY_REPEAT
+        UP -> KeyCode.KEY_REPEAT
+        DOWN -> KeyCode.KEY_REPEAT
+        WORD_LEFT -> KeyCode.KEY_REPEAT
+        WORD_RIGHT -> KeyCode.KEY_REPEAT
+        PAGE_UP -> KeyCode.MOVE_START_OF_PAGE
+        PAGE_DOWN -> KeyCode.MOVE_END_OF_PAGE
+        BACKGROUND_GATHERING -> KeyCode.BACKGROUND_GATHERING_TEMP_OFF
+        else -> KeyCode.UNSPECIFIED
+    }
 }
 
 // names need to be aligned with resources strings (using lowercase of key.name)
@@ -166,8 +215,10 @@ private fun upgradeToolbarPref(prefs: SharedPreferences, pref: String, default: 
     }
     // likely not needed, but better prepare for possibility of key removal
     list.removeAll {
+        val keyName = it.substringBefore(Separators.KV)
+        if (keyName.startsWith("__str_")) return@removeAll false
         try {
-            ToolbarKey.valueOf(it.substringBefore(Separators.KV))
+            ToolbarKey.valueOf(keyName)
             false
         } catch (_: IllegalArgumentException) {
             true
@@ -182,38 +233,32 @@ fun getPinnedToolbarKeys(prefs: SharedPreferences) = getEnabledToolbarKeys(prefs
 
 fun getEnabledClipboardToolbarKeys(prefs: SharedPreferences) = getEnabledToolbarKeys(prefs, Settings.PREF_CLIPBOARD_TOOLBAR_KEYS, defaultClipboardToolbarPref)
 
-fun addPinnedKey(prefs: SharedPreferences, key: ToolbarKey) {
+fun addPinnedKey(prefs: SharedPreferences, keyName: String) {
     // remove the existing version of this key and add the enabled one after the last currently enabled key
     val string = prefs.getString(Settings.PREF_PINNED_TOOLBAR_KEYS, defaultPinnedToolbarPref)!!
     val keys = string.split(Separators.ENTRY).toMutableList()
-    keys.removeAll { it.startsWith(key.name + Separators.KV) }
+    keys.removeAll { it.startsWith(keyName + Separators.KV) }
     val lastEnabledIndex = keys.indexOfLast { it.endsWith("true") }
-    keys.add(lastEnabledIndex + 1, key.name + Separators.KV + "true")
+    keys.add(lastEnabledIndex + 1, keyName + Separators.KV + "true")
     prefs.edit { putString(Settings.PREF_PINNED_TOOLBAR_KEYS, keys.joinToString(Separators.ENTRY)) }
 }
 
-fun removePinnedKey(prefs: SharedPreferences, key: ToolbarKey) {
+fun removePinnedKey(prefs: SharedPreferences, keyName: String) {
     // just set it to disabled
     val string = prefs.getString(Settings.PREF_PINNED_TOOLBAR_KEYS, defaultPinnedToolbarPref)!!
     val result = string.split(Separators.ENTRY).joinToString(Separators.ENTRY) {
-        if (it.startsWith(key.name + Separators.KV))
-            key.name + Separators.KV + "false"
+        if (it.startsWith(keyName + Separators.KV))
+            keyName + Separators.KV + "false"
         else it
     }
     prefs.edit { putString(Settings.PREF_PINNED_TOOLBAR_KEYS, result) }
 }
 
-private fun getEnabledToolbarKeys(prefs: SharedPreferences, pref: String, default: String): List<ToolbarKey> {
+private fun getEnabledToolbarKeys(prefs: SharedPreferences, pref: String, default: String): List<String> {
     val string = prefs.getString(pref, default)!!
     return string.split(Separators.ENTRY).mapNotNull {
         val split = it.split(Separators.KV)
-        if (split.last() == "true") {
-            try {
-                ToolbarKey.valueOf(split.first())
-            } catch (_: IllegalArgumentException) {
-                null
-            }
-        } else null
+        if (split.last() == "true") split.first() else null
     }
 }
 
@@ -259,29 +304,43 @@ fun clearCustomToolbarKeyCodes() {
     customToolbarKeyCodes = null
 }
 
-fun getCodeForToolbarKeySwipeDown(key: ToolbarKey) = Settings.getInstance().getCustomToolbarSwipeDownCode(key) ?: KeyCode.UNSPECIFIED
+fun getCodeForToolbarKeySwipeDown(keyName: String): Int {
+    val key = try { ToolbarKey.valueOf(keyName) } catch (_: Exception) { null }
+    return if (key == null) KeyCode.UNSPECIFIED else (Settings.getInstance().getCustomToolbarSwipeDownCode(key) ?: KeyCode.UNSPECIFIED)
+}
 
-fun onClickToolbarKey(view: View, onCodeInput: (Int) -> Unit) {
+fun getTextForToolbarKey(keyName: String): String? {
+    return if (keyName.startsWith("__str_")) keyName.substringAfter("__str_").decodeFromHex()
+    else null
+}
+
+fun onClickToolbarKey(view: View, onCodeInput: (Int) -> Unit, onTextInput: (String) -> Unit = {}) {
     AudioAndHapticFeedbackManager.getInstance().performHapticAndAudioFeedback(KeyCode.NOT_SPECIFIED, view, HapticEvent.KEY_PRESS)
-    val code = getCodeForToolbarKey(view.tag as ToolbarKey)
-    if (code != KeyCode.UNSPECIFIED) {
+    val tag = view.tag as String
+    val code = getCodeForToolbarKey(tag)
+    if (code == KeyCode.MULTIPLE_CODE_POINTS) {
+        getTextForToolbarKey(tag)?.let { text ->
+            val textToSend = if (text.length > 1 && text.count { it == '|' } == 1) "\u001D$text" else text
+            onTextInput(textToSend)
+        }
+    } else if (code != KeyCode.UNSPECIFIED) {
         onCodeInput(code)
     }
 }
 
-fun onLongClickToolbarKey(view: View, onCodeInput: (Int, Boolean) -> Unit) {
+fun onLongClickToolbarKey(view: View, onCodeInput: (Int, Boolean) -> Unit, onTextInput: (String) -> Unit = {}) {
     AudioAndHapticFeedbackManager.getInstance().performHapticAndAudioFeedback(KeyCode.NOT_SPECIFIED, view, HapticEvent.KEY_LONG_PRESS)
-    val longClickCode = getCodeForToolbarKeyLongClick(view.tag as ToolbarKey)
-    if (longClickCode == KeyCode.KEY_REPEAT) {
-        onClickToolbarKey(view) { onCodeInput(it, false) }
-        repeatToolbarKey(view) { onClickToolbarKey(view) { onCodeInput(it, true) } }
-    } else if (longClickCode != KeyCode.UNSPECIFIED) {
-        onCodeInput(longClickCode, false)
+    val code = getCodeForToolbarKeyLongClick(view.tag as String)
+    if (code == KeyCode.KEY_REPEAT) {
+        onClickToolbarKey(view, { onCodeInput(it, false) }, onTextInput)
+        repeatToolbarKey(view) { onClickToolbarKey(view, { onCodeInput(it, true) }, onTextInput) }
+    } else if (code != KeyCode.UNSPECIFIED) {
+        onCodeInput(code, false)
     }
 }
 
 fun onSwipeDownToolbarKey(view: View, onCodeInput: (Int) -> Unit) {
-    val code = getCodeForToolbarKeySwipeDown(view.tag as ToolbarKey)
+    val code = getCodeForToolbarKeySwipeDown(view.tag as String)
     if (code != KeyCode.UNSPECIFIED) {
         AudioAndHapticFeedbackManager.getInstance().performHapticAndAudioFeedback(KeyCode.NOT_SPECIFIED, view, HapticEvent.KEY_PRESS)
         onCodeInput(code)
@@ -304,3 +363,18 @@ data class ToolbarKeyCustomCodes(
     val longClick: Int?,
     val swipeDown: Int?
 )
+
+private fun String.decodeFromHex(): String {
+    val sb = StringBuilder()
+    var i = 0
+    while (i < length) {
+        val code = substring(i, i + 4).toInt(16)
+        sb.append(code.toChar())
+        i += 4
+    }
+    return sb.toString()
+}
+
+fun String.encodeToHex(): String {
+    return this.map { it.code.toString(16).padStart(4, '0') }.joinToString("")
+}

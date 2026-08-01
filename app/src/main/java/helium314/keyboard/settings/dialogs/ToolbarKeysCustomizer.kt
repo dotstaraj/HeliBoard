@@ -98,8 +98,8 @@ private fun ToolbarKeyCustomizer(
 ) {
     val ctx = LocalContext.current
     val prefs = ctx.prefs()
-    var code by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(getCodeForToolbarKey(key).toString())) }
-    var longPressCode by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(getCodeForToolbarKeyLongClick(key).toString())) }
+    var code by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(getCodeForToolbarKey(key.name).toString())) }
+    var longPressCode by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue(getCodeForToolbarKeyLongClick(key.name).toString())) }
     var swipeDownCode by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue((Settings.getInstance().getCustomToolbarSwipeDownCode(key) ?: "").toString())) }
     ThreeButtonAlertDialog(
         onDismissRequest = onDismissRequest,

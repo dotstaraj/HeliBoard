@@ -1425,11 +1425,28 @@ public class LatinIME extends InputMethodService implements
 
     public void onTextInput(@Nullable String rawText) {
         if (rawText == null) return;
+        String textToCommit = rawText;
+        int cursorOffset = -1;
+        if (rawText.startsWith("\u001D")) {
+            String textWithMarker = rawText.substring(1);
+            int idx = textWithMarker.indexOf('|');
+            if (idx != -1) {
+                textToCommit = textWithMarker.substring(0, idx) + textWithMarker.substring(idx + 1);
+                cursorOffset = idx;
+            }
+        }
         // TODO: have the keyboard pass the correct key code when we need it.
-        Event event = Event.createSoftwareTextEvent(rawText, KeyCode.MULTIPLE_CODE_POINTS, null);
+        Event event = Event.createSoftwareTextEvent(textToCommit, KeyCode.MULTIPLE_CODE_POINTS, null);
         InputTransaction completeInputTransaction = mInputLogic.onTextInput(mSettings.getCurrent(),
             event, mKeyboardSwitcher.getKeyboardCapsMode(), mHandler);
         updateStateAfterInputTransaction(completeInputTransaction);
+
+        if (cursorOffset != -1) {
+            int endPos = mInputLogic.mConnection.getExpectedSelectionStart();
+            int newPos = endPos - textToCommit.length() + cursorOffset;
+            mInputLogic.mConnection.setSelection(newPos, newPos);
+        }
+
         mInputLogic.restartSuggestionsOnWordTouchedByCursor(mSettings.getCurrent(), mKeyboardSwitcher.getCurrentKeyboardScript());
         mKeyboardSwitcher.onEvent(event, getCurrentAutoCapsState(), getCurrentRecapitalizeState());
     }

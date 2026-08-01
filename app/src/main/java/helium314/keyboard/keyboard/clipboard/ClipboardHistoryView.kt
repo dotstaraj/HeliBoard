@@ -197,18 +197,22 @@ class ClipboardHistoryView @JvmOverloads constructor(
     }
 
     override fun onClick(view: View) {
-        if (view.tag is ToolbarKey) {
-            onClickToolbarKey(view) {
+        if (view.tag is String) {
+            onClickToolbarKey(view, {
                 keyboardActionListener.onCodeInput(it, Constants.NOT_A_COORDINATE, Constants.NOT_A_COORDINATE, false)
-            }
+            }, {
+                keyboardActionListener.onTextInput(it)
+            })
         }
     }
 
     override fun onLongClick(view: View): Boolean {
-        if (view.tag is ToolbarKey) {
-            onLongClickToolbarKey(view) { code, isRepeat ->
+        if (view.tag is String) {
+            onLongClickToolbarKey(view, { code, isRepeat ->
                 keyboardActionListener.onCodeInput(code, Constants.NOT_A_COORDINATE, Constants.NOT_A_COORDINATE, isRepeat)
-            }
+            }, {
+                keyboardActionListener.onTextInput(it)
+            })
             return true
         }
         return false
