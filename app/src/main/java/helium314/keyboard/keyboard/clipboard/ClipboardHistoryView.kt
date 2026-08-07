@@ -158,7 +158,7 @@ class ClipboardHistoryView @JvmOverloads constructor(
         val settings = Settings.getInstance()
         KeyboardTypeface.customTypeface()?.let { params.mTypeface = it }
         setupClipKey(params)
-        setupBottomRowKeyboard(editorInfo, keyboardActionListener)
+        //setupBottomRowKeyboard(editorInfo, keyboardActionListener)
 
         placeholderView.apply {
             KeyboardTypeface.applyToTextView(this)
