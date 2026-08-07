@@ -1,0 +1,67 @@
+name: Build release APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v3
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Ensure debug keystore exists
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v \
+              -keystore ~/.android/debug.keystore \
+              -storepass android -keypass android \
+              -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Build with Gradle
+        run: ./gradlew clean assembleRelease --no-build-cache
+
+      - name: Sign release APK
+        # the release build type references the debug signing config (see app/build.gradle.kts) but
+        # AGP was not actually applying a signature to this variant's output on this runner, so sign
+        # explicitly with apksigner as a reliable, explicit step
+        run: |
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          APKSIGNER=$(find "$ANDROID_HOME" "$ANDROID_SDK_ROOT" -name apksigner -type f 2>/dev/null | head -1)
+          echo "Signing $APK with $APKSIGNER"
+          "$APKSIGNER" sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey "$APK"
+
+      - name: Verify signed APK
+        run: |
+          APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          APKSIGNER=$(find "$ANDROID_HOME" "$ANDROID_SDK_ROOT" -name apksigner -type f 2>/dev/null | head -1)
+          "$APKSIGNER" verify --print-certs -v "$APK"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: HeliBoard-release
+          path: app/build/outputs/apk/release/*.apk
+
+      - name: Archive reports for failed job
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: '*/build/reports'
+        if: ${{ failure() }}
